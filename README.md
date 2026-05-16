@@ -11,52 +11,69 @@
 
 ## Что это
 
-**arb_pilot** сканирует ваш Dart/Flutter проект, находит каждый вызов `l10n.someKey`, и сравнивает их с `.arb` файлами переводов. Затем сообщает — что отсутствует, что устарело, и при желании — автоматически переводит пробелы через DeepL, Google Translate, Yandex или локальный LLM через Ollama.
+**arb_pilot** сканирует ваш Dart/Flutter проект через AST-парсер, находит каждый вызов `l10n.someKey`, сравнивает с `.arb` файлами переводов и сообщает — что отсутствует, что устарело. При желании автоматически переводит пробелы через DeepL, Google Translate, Yandex или локальный LLM через Ollama.
 
-**Нет внешних зависимостей.** Только `dart:io`, `dart:convert`, `dart:core`. Запускается без `pub get`.
+**Нет внешних зависимостей** — только `dart:io`, `dart:convert`, `dart:core`. Не нужен `pub get`.
 
 ```
-════════════════════════════════════════════════════════════
+══════════════════════════════════════════════════════════════
   ✈️  arb_pilot — i18n Revisor
-════════════════════════════════════════════════════════════
+  Проект: /path/to/my_app
+══════════════════════════════════════════════════════════════
 
 📁 Обнаружено
   Dart файлов для анализа                       142
   .arb файлов найдено                            18
+    core: [en, ru, zh, hi, de]
+    auth: [en, ru]
+    profile: [en, ru, zh]
 
 🔍 Анализ кода
   Уникальных ключей найдено                      84
-  С @i18n-context аннотацией                     61
+  С @i18n-context аннотацией                 61 / 84
+  ⚠  23 ключей без контекста — качество перевода ниже
 
-📊 Результаты
+📊 Результаты проверки
   Отсутствующих переводов                        12   ←
-  Устаревших ключей                               3   ←
+  Устаревших ключей (orphaned)                    3   ←
   Пустых значений                                 0   ✓
   Требуют ревью (NEEDS_REVIEW)                    0   ✓
+
+🔌 Провайдеры перевода
+    ✓ DeepL Free
+    ✓ Google Translate
+    ✗ Yandex Translate
+    ✗ Ollama (llama3)
 
 🤖 Автоперевод (12 строк)
   [ru] createNode → "Создать узел"          (DeepL Free)
   [zh] createNode → "创建节点"              (DeepL Free)
   [hi] createNode → "नोड बनाएं"            (Google Translate)
   [de] createNode → "Knoten erstellen"      (DeepL Free)
+  ...
 
-════════════════════════════════════════════════════════════
-  ✅ Готово — 12 строк · 4 языка · 3 сек
-════════════════════════════════════════════════════════════
+══════════════════════════════════════════════════════════════
+  ✅ Переведено          12 строк
+  ⏱  Время              4с
+══════════════════════════════════════════════════════════════
+
+  🎉 Локализация обновлена!
 ```
 
 ---
 
 ## Возможности
 
-- **Аудит** — безопасное сканирование без изменений, можно запускать в любое время
+- **Аудит** — безопасное сканирование без изменений, запускайте в любое время
+- **AST-парсер** — находит ключи через regex без тяжёлого `package:analyzer`
 - **Автоперевод** — DeepL → Google → Yandex → Ollama, fallback-цепочка автоматически
 - **Офлайн режим** — полная работа без интернета через Ollama (llama3, mistral, gemma2...)
-- **Поиск orphaned ключей** — находит переводы в `.arb`, которых больше нет в коде
+- **Orphan detection** — находит ключи в `.arb` которых больше нет в коде
+- **Quality checks** — пустые значения, NEEDS_REVIEW, placeholder mismatch, слишком длинные строки
 - **Context-aware** — читает `@i18n-context` комментарии для точного перевода UI строк
-- **Мультимодульный** — поддерживает `lib/core/l10n/`, `lib/features/*/l10n/`, `packages/*/lib/l10n/`
-- **JSON вывод** — машиночитаемые отчёты для CI/CD
-- **Нет зависимостей** — чистый Dart, не нужен `pub get`
+- **Мультимодульный** — `lib/core/l10n/`, `lib/features/*/l10n/`, `packages/*/lib/l10n/`
+- **JSON вывод** — машиночитаемые отчёты с coverage по языкам для CI/CD
+- **Нет зависимостей** — чистый Dart, `pub get` не нужен
 - **Конфигурируемый** — `arb_pilot.yaml` адаптирует под любую структуру проекта
 
 ---
@@ -98,14 +115,19 @@ dart run bin/language_revisor.dart
 ### 4. Автоперевод
 
 ```bash
-# DeepL (лучшее качество для RU/DE/FR/ZH/ES)
+# DeepL — лучшее качество для RU/DE/FR/ZH/ES
 dart run bin/language_revisor.dart --auto --deepl-key=YOUR_KEY:fx
 
-# Google Translate (130+ языков включая хинди)
+# Google Translate — 130+ языков включая хинди
 dart run bin/language_revisor.dart --auto --google-key=YOUR_KEY
 
-# Оба — DeepL для EU языков, Google для хинди и остальных
-dart run bin/language_revisor.dart --auto --deepl-key=DEEPL_KEY --google-key=GOOGLE_KEY
+# Лучшая комбинация — DeepL + Google
+dart run bin/language_revisor.dart --auto \
+  --deepl-key=DEEPL_KEY:fx \
+  --google-key=GOOGLE_KEY
+
+# Yandex — отлично для RU и постсоветских языков
+dart run bin/language_revisor.dart --auto --yandex-key=YOUR_KEY
 
 # Ollama — полностью офлайн, без API ключей
 dart run bin/language_revisor.dart --auto --ollama-model=llama3
@@ -117,8 +139,6 @@ dart run bin/language_revisor.dart --auto --ollama-model=llama3
 
 ### Standalone (рекомендуется)
 
-Клонировать рядом с проектом:
-
 ```
 workspace/
 ├── my_app/
@@ -129,7 +149,7 @@ workspace/
 dart run arb_pilot/bin/language_revisor.dart --root=./my_app
 ```
 
-### Встраивание
+### Встраивание в проект
 
 ```bash
 cp -r arb_pilot/bin your_project/
@@ -137,13 +157,13 @@ mkdir -p your_project/lib/tools
 cp -r arb_pilot/lib/tools/i18n your_project/lib/tools/
 ```
 
-Запуск из корня вашего проекта:
+Запуск из корня проекта:
 
 ```bash
 dart run bin/language_revisor.dart
 ```
 
-Полное руководство по установке — в [INSTALLATION.md](INSTALLATION.md).
+Полное руководство — в [INSTALLATION.md](INSTALLATION.md).
 
 ---
 
@@ -166,21 +186,21 @@ target_langs:             # Целевые языки
   - ja
   - pt
 
-l10n_paths:               # Пути к .arb файлам (glob)
+l10n_paths:               # Пути к .arb файлам (glob поддерживается)
   - lib/core/l10n
   - lib/features/*/l10n
   - packages/*/lib/l10n
 
-accessors:                # Паттерны обращения к переводам
+accessors:                # Паттерны обращения к переводам в коде
   - l10n
   - AppLocalizations.of(context)
-  # Для GetX:  tr
-  # Для intl:  S.of(context), S.current
+  # GetX:   tr
+  # intl:   S.of(context), S.current
 
 arb_prefix: app           # app → app_en.arb, app_ru.arb
 ```
 
-**Defaults** без конфига:
+**Defaults без конфига:**
 
 | Параметр | Значение |
 |---|---|
@@ -192,80 +212,43 @@ arb_prefix: app           # app → app_en.arb, app_ru.arb
 
 ---
 
-## Команды
-
-### Режимы
-
-```bash
-dart run bin/language_revisor.dart                   # Аудит (read-only)
-dart run bin/language_revisor.dart --auto            # Автоперевод
-dart run bin/language_revisor.dart --interactive     # С подтверждением каждого шага
-dart run bin/language_revisor.dart --auto --dry-run  # Показать план без изменений
-```
-
-### Провайдеры
-
-```bash
---deepl-key=KEY       # DeepL (или env DEEPL_API_KEY)
---google-key=KEY      # Google Translate (или env GOOGLE_TRANSLATE_KEY)
---ollama-model=NAME   # Ollama модель (default: llama3)
---ollama-host=URL     # Ollama хост (default: http://localhost:11434)
-```
-
-### Фильтры
-
-```bash
---langs=ru,zh,hi      # Только эти языки
---source-lang=ru      # Другой исходный язык
---root=PATH           # Корень проекта (default: текущая папка)
---remove-orphaned     # Удалить устаревшие ключи
-```
-
-### Вывод
-
-```bash
---format=json         # JSON для CI/CD
---no-color            # Без ANSI цветов (Windows CMD)
-```
-
-Полный справочник команд — в [COMMANDS.md](COMMANDS.md).
-
----
-
 ## Context-аннотации
 
-Добавляйте комментарии перед вызовами `l10n` — переводчик учтёт контекст.
+Добавляйте `@i18n-context` комментарии перед вызовами `l10n` — переводчик учтёт контекст UI.
 
 ```dart
 // @i18n-context: button in knowledge graph view — creates a new note node
-l10n.createNode
+final label = l10n.createNode;
 
-// @i18n-context: soft delete — moves item to archive, can be recovered
-l10n.moveToArchive
+// @i18n-context: soft delete — moves item to archive, recoverable later
+final action = l10n.moveToArchive;
 
 // @i18n-context: placeholder text inside the global search input field
-l10n.searchPlaceholder
+final hint = l10n.searchPlaceholder;
+
+// @i18n-context: toggle button that pauses physics simulation on canvas
+final toggle = l10n.pausePhysics;
 ```
 
-Без контекста "node" может быть переведён как сетевой узел, дерево, или граф — это разные слова в большинстве языков. С контекстом перевод точный, и строка не помечается как `needsReview`.
+Без контекста "node" может быть переведён как сетевой узел, дерево или граф — это разные слова в большинстве языков. С контекстом перевод точный, и строка **не** помечается как `needsReview`.
 
 ---
 
 ## Провайдеры перевода
 
-Цепочка пробуется по порядку, автоматический fallback:
+Fallback-цепочка — пробуется по порядку, автоматически:
 
 ```
 DeepL → Google Translate → Yandex → Ollama → Stub (⚠️ NEEDS_REVIEW)
 ```
 
-| Провайдер | Языков | Офлайн | Бесплатно |
-|---|---|---|---|
-| **DeepL** | 29 (EN, RU, ZH, DE, FR...) | ❌ | 500K символов/месяц |
-| **Google Translate** | 130+ включая Hindi | ❌ | $300 кредит при регистрации |
-| **Yandex Translate** | 100+ | ❌ | Бесплатный грант |
-| **Ollama** | Все | ✅ | Бесплатно |
-| **Stub** | Все | ✅ | Всегда бесплатно |
+| Провайдер | Языков | Хинди | Офлайн | Бесплатно |
+|---|---|---|---|---|
+| **DeepL** | 29 (EN, RU, ZH, DE, FR...) | ❌ | ❌ | 500K символов/мес |
+| **Google Translate** | 130+ | ✅ | ❌ | $300 кредит |
+| **Yandex Translate** | 100+ (RU, KK, UZ...) | ❌ | ❌ | Грант |
+| **Ollama** | Все | ✅ | ✅ | Бесплатно |
+| **Stub** | Все | ✅ | ✅ | Всегда |
 
 Free ключи DeepL заканчиваются на `:fx` — arb_pilot определяет это автоматически.
 
@@ -293,15 +276,16 @@ Free ключи DeepL заканчиваются на `:fx` — arb_pilot опр
 }
 ```
 
-### Сгенерированный
+### Сгенерированный (arb_pilot пишет)
 
 ```json
 {
   "@@locale": "ru",
-  "@@last_modified": "2026-05-01T12:00:00.000Z",
+  "@@last_modified": "2026-05-14T12:00:00.000Z",
   "createItem": "Создать элемент",
   "@createItem": {
-    "description": "Auto-translated by DeepL (Free)."
+    "description": "Auto-translated by DeepL Free.",
+    "x-source": "Create item"
   }
 }
 ```
@@ -314,37 +298,86 @@ Free ключи DeepL заканчиваются на `:fx` — arb_pilot опр
   "createItem": "⚠️ NEEDS_REVIEW: Create item",
   "@createItem": {
     "description": "Auto-translated by Stub. NEEDS REVIEW.",
-    "x-needs-review": true
+    "x-needs-review": true,
+    "x-source": "Create item"
   }
 }
 ```
+
+Найти строки требующие ревью:
+
+```bash
+grep -r "NEEDS_REVIEW" lib/*/l10n/ packages/*/lib/l10n/
+```
+
+---
+
+## Все команды
+
+```bash
+dart run bin/language_revisor.dart                          # Аудит
+dart run bin/language_revisor.dart --auto                   # Автоперевод
+dart run bin/language_revisor.dart --interactive            # С подтверждением
+dart run bin/language_revisor.dart --auto --dry-run         # Предпросмотр
+
+dart run bin/language_revisor.dart --auto --deepl-key=KEY
+dart run bin/language_revisor.dart --auto --google-key=KEY
+dart run bin/language_revisor.dart --auto --yandex-key=KEY
+dart run bin/language_revisor.dart --auto --ollama-model=llama3
+
+dart run bin/language_revisor.dart --langs=ru,zh            # Только эти языки
+dart run bin/language_revisor.dart --interactive --remove-orphaned
+dart run bin/language_revisor.dart --format=json            # JSON для CI/CD
+dart run bin/language_revisor.dart --root=../my_app         # Другой проект
+dart run bin/language_revisor.dart --help                   # Справка
+```
+
+Полный справочник — в [COMMANDS.md](COMMANDS.md).
 
 ---
 
 ## CI/CD
 
 ```yaml
-# .github/workflows/i18n_audit.yml
-name: i18n Audit
+# .github/workflows/i18n.yml
+name: i18n Audit & Translate
 
-on: [push, pull_request]
+on:
+  push:
+    branches: [main]
+  pull_request:
 
 jobs:
-  audit:
+  i18n:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: dart-lang/setup-dart@v1
+        with:
+          sdk: stable
 
-      - name: Audit translations
-        run: dart run bin/language_revisor.dart --format=json --no-color > i18n_report.json
-
-      - name: Check for missing translations
+      - name: Audit
         run: |
-          MISSING=$(cat i18n_report.json | \
-            python3 -c "import sys,json; print(json.load(sys.stdin)['by_type']['missing'])")
-          echo "Missing: $MISSING"
-          if [ "$MISSING" -gt "0" ]; then exit 2; fi
+          dart run bin/language_revisor.dart \
+            --format=json --no-color > i18n_report.json
+        continue-on-error: true
+
+      - name: Auto-translate
+        if: github.ref == 'refs/heads/main'
+        env:
+          DEEPL_API_KEY: ${{ secrets.DEEPL_API_KEY }}
+          GOOGLE_TRANSLATE_KEY: ${{ secrets.GOOGLE_TRANSLATE_KEY }}
+        run: dart run bin/language_revisor.dart --auto --no-color
+
+      - name: Commit translations
+        if: github.ref == 'refs/heads/main'
+        run: |
+          git config user.name "arb_pilot"
+          git config user.email "bot@arb-pilot.dev"
+          git add "lib/**/l10n/*.arb" "packages/**/l10n/*.arb" || true
+          git diff --staged --quiet || \
+            git commit -m "chore: auto-translate [skip ci]"
+          git push || true
 
       - name: Upload report
         uses: actions/upload-artifact@v4
@@ -370,32 +403,33 @@ jobs:
 ```
 arb_pilot/
 ├── README.md
-├── INSTALLATION.md        ← установка и интеграция
-├── COMMANDS.md            ← справочник всех команд
-├── PROVIDERS.md           ← настройка провайдеров
+├── INSTALLATION.md       ← установка и интеграция
+├── COMMANDS.md           ← все команды и флаги
+├── PROVIDERS.md          ← настройка провайдеров
 ├── CHANGELOG.md
 ├── LICENSE
-├── arb_pilot.yaml         ← пример конфига
+├── arb_pilot.yaml        ← пример конфига
 ├── example/
-│   └── app_en.arb
+│   └── app_en.arb        ← пример исходного файла
 ├── bin/
-│   └── language_revisor.dart   ← точка входа CLI
+│   └── language_revisor.dart        ← точка входа CLI
 └── lib/
     └── tools/
         └── i18n/
-            ├── discovery.dart
-            ├── ast_parser.dart
-            ├── differ.dart
-            ├── validator.dart
-            ├── reporter.dart
-            ├── arb_writer.dart
+            ├── config.dart           ← загрузка настроек
+            ├── discovery.dart        ← поиск файлов
+            ├── ast_parser.dart       ← извлечение ключей
+            ├── differ.dart           ← поиск пробелов
+            ├── arb_writer.dart       ← запись переводов
+            ├── reporter.dart         ← вывод в терминал/JSON
+            ├── path_utils.dart       ← утилиты путей
             └── translator/
-                ├── provider.dart
-                ├── chain.dart
+                ├── provider.dart     ← интерфейс
+                ├── chain.dart        ← fallback-цепочка
                 ├── deepl_provider.dart
                 ├── google_provider.dart
                 ├── yandex_provider.dart
-                ├── llm_provider.dart
+                ├── llm_provider.dart ← Ollama
                 └── stub_provider.dart
 ```
 
@@ -407,8 +441,11 @@ arb_pilot/
 DEEPL_API_KEY=abc123:fx
 GOOGLE_TRANSLATE_KEY=AIzaSy...
 YANDEX_TRANSLATE_KEY=AQVNy...
-ARB_PILOT_ROOT=/path/to/project    # альтернатива --root
-DEBUG=1                             # подробный вывод ошибок
+OLLAMA_MODEL=llama3
+OLLAMA_HOST=http://localhost:11434
+ARB_PILOT_ROOT=/path/to/project
+NO_COLOR=1
+DEBUG=1
 ```
 
 ---

@@ -1,0 +1,12 @@
+name: arb_pilot
+description: Smart i18n CLI for Dart & Flutter — audits, auto-translates and keeps .arb files in sync.
+version: 1.0.0
+repository: https://github.com/YOUR_NAME/arb_pilot
+
+environment:
+  sdk: '>=3.0.0 <4.0.0'
+
+# Zero external dependencies — pure dart:core, dart:io, dart:convert
+dependencies: {}
+
+dev_dependencies: {}

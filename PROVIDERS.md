@@ -1,6 +1,6 @@
 # arb_pilot — Подключение провайдеров перевода
 
-> Подробное руководство по настройке каждого провайдера: DeepL, Google Translate, Yandex Translate, Ollama (локальный LLM), а также по добавлению собственного провайдера.
+> Настройка DeepL, Google Translate, Yandex Translate, Ollama и добавление своего провайдера.
 
 ---
 
@@ -19,14 +19,17 @@
 
 ## Как работает система провайдеров
 
-arb_pilot использует **fallback-цепочку**: если первый провайдер недоступен или не поддерживает язык — автоматически используется следующий.
+arb_pilot использует **fallback-цепочку** — если провайдер недоступен
+или не поддерживает язык, автоматически берётся следующий:
 
 ```
 DeepL → Google Translate → Yandex → Ollama → Stub
 ```
 
-Цепочка конфигурируется в `lib/tools/i18n/translator/chain.dart`.
-Каждый провайдер реализует интерфейс `TranslationProvider`:
+Цепочка строится в `translator/chain.dart` методом `TranslationChain.fromConfig()`.
+Провайдеры добавляются только если передан соответствующий ключ.
+
+Каждый провайдер реализует интерфейс из `translator/provider.dart`:
 
 ```dart
 abstract class TranslationProvider {
@@ -42,44 +45,54 @@ abstract class TranslationProvider {
 }
 ```
 
-Чтобы добавить провайдер — реализуйте этот интерфейс и зарегистрируйте его в `TranslationChain.fromConfig()`.
+При запуске arb_pilot параллельно проверяет доступность всех провайдеров
+и показывает статус перед переводом:
+
+```
+🔌 Провайдеры перевода
+    ✓ DeepL Free
+    ✓ Google Translate
+    ✗ Yandex Translate
+    ✗ Ollama (llama3)
+    ✓ Stub
+```
 
 ---
 
 ## DeepL
 
-**Качество:** ★★★★★ — лучшее для европейских языков и русского  
-**Языков:** 29  
-**Офлайн:** нет  
-**Бесплатный тариф:** да (500 000 символов/месяц)
+**Качество:** ★★★★★ — лучшее для EU/RU/ZH языков
+**Языков:** 29
+**Офлайн:** нет
+**Бесплатный тариф:** 500 000 символов/месяц
 
 ### Поддерживаемые языки
 
-EN, RU, ZH, ES, DE, FR, IT, JA, KO, PT, NL, PL, SV, DA, FI, CS, RO, HU, TR, UK, BG, HR, SK, SL, LT, LV, ET
+`en ru zh es de fr it ja ko pt nl pl sv da fi cs ro hu tr uk bg hr sk sl lt lv et id nb`
 
-> ⚠️ **Хинди (HI) не поддерживается DeepL.** Для хинди используйте Google Translate или Ollama.
+> ⚠️ **Хинди (hi) не поддерживается.** Автоматически передаётся следующему провайдеру в цепочке.
 
-### Получение API ключа
+### Получение ключа
 
-1. Зайдите на [deepl.com/pro](https://www.deepl.com/pro) и создайте аккаунт
-2. Выберите тариф **Free** (бесплатно) или **Pro**
-3. В разделе **Account → API Keys** скопируйте ключ
-4. Free ключи заканчиваются на `:fx` — это важно
+1. Зайдите на [deepl.com/pro](https://www.deepl.com/pro)
+2. Создайте аккаунт и выберите тариф **Free** или **Pro**
+3. Перейдите в **Account → API Keys** и скопируйте ключ
+4. Free ключи заканчиваются на `:fx`
 
-### Настройка
+### Подключение
 
 ```bash
 # Через флаг
 dart run bin/language_revisor.dart --auto --deepl-key=YOUR_KEY:fx
 
-# Через переменную окружения (рекомендуется)
+# Через переменную окружения (рекомендуется для CI)
 export DEEPL_API_KEY="YOUR_KEY:fx"
 dart run bin/language_revisor.dart --auto
 ```
 
-arb_pilot автоматически определяет тариф по суффиксу `:fx`:
-- Free → использует `https://api-free.deepl.com`
-- Pro → использует `https://api.deepl.com`
+arb_pilot автоматически определяет тариф по суффиксу:
+- `:fx` → `https://api-free.deepl.com`
+- без суффикса → `https://api.deepl.com`
 
 ### Проверка ключа
 
@@ -95,34 +108,36 @@ curl -X GET "https://api.deepl.com/v2/usage" \
 
 Ответ должен содержать `"character_count"` и `"character_limit"`.
 
-### Советы
+### Особенности реализации
 
-- Добавляйте `@i18n-context` аннотации в код — DeepL использует поле `context` в API запросе для улучшения качества
-- Без контекста переводы помечаются `needsReview: true` и получают флаг в `.arb` файле
-- DeepL поддерживает **batch запросы** — несколько строк за один HTTP вызов (реализовано в `deepl_provider.dart`)
+В `deepl_provider.dart` используются дополнительные параметры API:
+- `tag_handling: xml` — сохраняет XML/HTML теги в строках
+- `preserve_formatting: 1` — не меняет форматирование
+- `context` — передаётся из `@i18n-context` аннотации для улучшения качества
+
+Без `@i18n-context` перевод помечается `needsReview: true` и получает флаг в `.arb` файле.
 
 ---
 
 ## Google Cloud Translation
 
-**Качество:** ★★★★ — хорошее, особенно для азиатских и редких языков  
-**Языков:** 130+ включая хинди, арабский, суахили, вьетнамский  
-**Офлайн:** нет  
+**Качество:** ★★★★ — хорошее, особенно для азиатских и редких языков
+**Языков:** 130+ включая хинди, арабский, суахили, вьетнамский
+**Офлайн:** нет
 **Бесплатный тариф:** $300 кредитов при регистрации, затем $20 за 1M символов
 
-### Получение API ключа
+### Получение ключа
 
 1. Откройте [Google Cloud Console](https://console.cloud.google.com/)
-2. Создайте проект (или выберите существующий)
+2. Создайте проект
 3. Перейдите в **APIs & Services → Library**
 4. Найдите и включите **Cloud Translation API**
-5. Перейдите в **APIs & Services → Credentials**
-6. Нажмите **Create Credentials → API Key**
-7. Скопируйте ключ
+5. Перейдите в **APIs & Services → Credentials → Create Credentials → API Key**
+6. Скопируйте ключ (начинается с `AIzaSy...`)
 
-> 💡 Для ограничения доступа — нажмите **Edit Key** и добавьте ограничение по API (только Cloud Translation API).
+> 💡 Ограничьте ключ по API: Edit Key → API restrictions → Cloud Translation API
 
-### Настройка
+### Подключение
 
 ```bash
 # Через флаг
@@ -137,17 +152,21 @@ dart run bin/language_revisor.dart --auto
 
 ```bash
 curl "https://translation.googleapis.com/language/translate/v2?key=YOUR_KEY&q=Hello&target=ru"
+# Ответ: {"data":{"translations":[{"translatedText":"Привет"}]}}
 ```
 
-Ответ: `{"data":{"translations":[{"translatedText":"Привет"}]}}`
+### Особенности реализации
+
+В `google_provider.dart` автоматически декодируются HTML-сущности которые Google иногда возвращает:
+`&amp;` → `&`, `&lt;` → `<`, `&gt;` → `>`, `&#39;` → `'` и т.д.
 
 ### Рекомендуемая комбинация
 
-DeepL + Google — покрывает все 130+ языков, при этом для европейских используется более качественный DeepL:
+DeepL + Google — DeepL для европейских языков, Google для хинди и редких:
 
 ```bash
 dart run bin/language_revisor.dart --auto \
-  --deepl-key=YOUR_DEEPL_KEY:fx \
+  --deepl-key=YOUR_KEY:fx \
   --google-key=YOUR_GOOGLE_KEY
 ```
 
@@ -155,136 +174,50 @@ dart run bin/language_revisor.dart --auto \
 
 ## Yandex Translate
 
-**Качество:** ★★★★ — отличное для русского и постсоветских языков  
-**Языков:** 100+  
-**Офлайн:** нет  
-**Бесплатный тариф:** через Yandex Cloud (платёжный аккаунт обязателен, но есть бесплатный грант)
+**Качество:** ★★★★ — отличное для RU и постсоветских языков
+**Языков:** 100+ включая KK, UZ, BE, UK, AZ, HY, KA
+**Офлайн:** нет
+**Бесплатный тариф:** грант при регистрации в Yandex Cloud
 
-### Получение API ключа
+### Поддерживаемые языки
 
-1. Зайдите на [yandex.cloud](https://yandex.cloud/) и создайте аккаунт
-2. Создайте платёжный аккаунт (бесплатный грант доступен)
+`ru en uk be kk az hy ka uz ky tg tk mn tt ba cv ce os de fr es it pt pl nl cs sv da fi no tr ar he fa zh ja ko vi id th ms ro hu bg hr sk sl et lv lt sr mk sq el mt`
+
+### Получение ключа
+
+1. Зайдите на [console.yandex.cloud](https://console.yandex.cloud/)
+2. Создайте платёжный аккаунт (доступен бесплатный грант)
 3. Перейдите в **Translate API** → создайте сервисный аккаунт
-4. Создайте API-ключ для сервисного аккаунта
-5. Скопируйте ключ (начинается с `AQVN...`)
+4. Создайте API-ключ → скопируйте (начинается с `AQVN...`)
 
-### Настройка провайдера
-
-Yandex Translate реализован как дополнительный провайдер.
-Создайте файл `lib/tools/i18n/translator/yandex_provider.dart`:
-
-```dart
-import 'dart:convert';
-import 'dart:io';
-import 'provider.dart';
-
-class YandexTranslateProvider implements TranslationProvider {
-  final String apiKey;
-  static const _endpoint = 
-    'https://translate.api.cloud.yandex.net/translate/v2/translate';
-
-  static const _supported = {
-    'ru', 'en', 'uk', 'be', 'kk', 'az', 'hy', 'ka', 'uz',
-    'tr', 'de', 'fr', 'es', 'it', 'pt', 'pl', 'nl', 'cs',
-    'sv', 'fi', 'zh', 'ja', 'ko', 'ar', 'he', 'vi', 'id',
-  };
-
-  YandexTranslateProvider({required this.apiKey});
-
-  @override
-  String get name => 'Yandex Translate';
-
-  @override
-  bool supportsLanguage(String langCode) =>
-      _supported.contains(langCode.toLowerCase());
-
-  @override
-  Future<bool> isAvailable() async {
-    if (apiKey.isEmpty) return false;
-    try {
-      // Тестовый запрос
-      final result = await translate('test', from: 'en', to: 'ru');
-      return result.text.isNotEmpty;
-    } catch (_) {
-      return false;
-    }
-  }
-
-  @override
-  Future<TranslationResult> translate(
-    String text, {
-    required String from,
-    required String to,
-    String? context,
-  }) async {
-    final body = jsonEncode({
-      'texts': [text],
-      'targetLanguageCode': to,
-      'sourceLanguageCode': from,
-      if (context != null) 'glossaryConfig': {
-        'glossaryData': {
-          'glossaryPairs': [
-            {'sourceText': context, 'translatedText': context}
-          ]
-        }
-      },
-    });
-
-    final client = HttpClient();
-    final req = await client.postUrl(Uri.parse(_endpoint));
-    req.headers.set('Authorization', 'Api-Key $apiKey');
-    req.headers.contentType = ContentType.json;
-    req.write(body);
-
-    final res = await req.close();
-    final raw = await res.transform(utf8.decoder).join();
-    client.close();
-
-    if (res.statusCode != 200) {
-      throw Exception('Yandex ${res.statusCode}: $raw');
-    }
-
-    final data = jsonDecode(raw) as Map<String, dynamic>;
-    final translated = (data['translations'] as List).first['text'] as String;
-
-    return TranslationResult(
-      text: translated,
-      provider: name,
-      needsReview: context == null,
-    );
-  }
-}
-```
-
-Подключите в `chain.dart`:
-
-```dart
-// lib/tools/i18n/translator/chain.dart
-import 'yandex_provider.dart';
-
-// В методе fromConfig():
-final yandexKey = Platform.environment['YANDEX_TRANSLATE_KEY'] 
-    ?? args['yandex-key'] ?? '';
-if (yandexKey.isNotEmpty) {
-  providers.add(YandexTranslateProvider(apiKey: yandexKey));
-}
-```
-
-### Настройка в CLI
+### Подключение
 
 ```bash
+# Через флаг
+dart run bin/language_revisor.dart --auto --yandex-key=AQVNy...
+
+# Через переменную окружения
 export YANDEX_TRANSLATE_KEY="AQVNy..."
 dart run bin/language_revisor.dart --auto
+```
+
+### Проверка ключа
+
+```bash
+curl -X POST "https://translate.api.cloud.yandex.net/translate/v2/translate" \
+  -H "Authorization: Api-Key YOUR_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"texts":["Hello"],"targetLanguageCode":"ru","sourceLanguageCode":"en"}'
 ```
 
 ---
 
 ## Ollama — Локальный LLM
 
-**Качество:** ★★★ — зависит от модели  
-**Языков:** все (LLM обучены на многоязычных данных)  
-**Офлайн:** ✅ да — интернет не нужен  
-**Стоимость:** бесплатно (только ресурсы машины)
+**Качество:** ★★★ — зависит от модели
+**Языков:** все (LLM обучены на многоязычных данных)
+**Офлайн:** ✅ полностью
+**Стоимость:** бесплатно
 
 ### Установка Ollama
 
@@ -295,41 +228,39 @@ brew install ollama
 # Linux
 curl -fsSL https://ollama.com/install.sh | sh
 
-# Windows
-# Скачайте установщик с https://ollama.com/download
+# Windows — скачайте с https://ollama.com/download
 ```
 
-### Запуск и скачивание моделей
+### Скачивание моделей
 
 ```bash
-# Запустить Ollama сервер
-ollama serve
+ollama serve          # запустить сервер
 
-# Скачать рекомендуемые модели для перевода
-ollama pull llama3          # 4.7GB — лучшее качество перевода
-ollama pull mistral         # 4.1GB — быстрее, меньше памяти
-ollama pull gemma2          # 5.4GB — хорошее качество от Google
-ollama pull phi3            # 2.4GB — минимальные требования к памяти
+# Рекомендуемые модели для перевода
+ollama pull llama3    # 4.7 GB — лучшее качество
+ollama pull mistral   # 4.1 GB — быстрее, меньше памяти
+ollama pull gemma2    # 5.4 GB — хорошее качество от Google
+ollama pull phi3      # 2.4 GB — минимальные требования
 ```
 
-### Настройка
+### Подключение
 
 ```bash
 # Стандартный запуск
 dart run bin/language_revisor.dart --auto --ollama-model=llama3
 
-# Свой хост (например удалённый сервер)
+# Свой хост (удалённый сервер)
 dart run bin/language_revisor.dart --auto \
   --ollama-model=mistral \
-  --ollama-host=http://192.168.1.50:11434
+  --ollama-host=http://192.168.1.100:11434
 
-# Через env
+# Через переменные окружения
 export OLLAMA_MODEL=llama3
 export OLLAMA_HOST=http://localhost:11434
 dart run bin/language_revisor.dart --auto
 ```
 
-### Требования к ресурсам
+### Требования к RAM
 
 | Модель | RAM | Качество перевода |
 |---|---|---|
@@ -339,55 +270,56 @@ dart run bin/language_revisor.dart --auto
 | `gemma2` | 12 GB | Отличное |
 | `llama3:70b` | 48 GB | Максимальное |
 
-### Советы для лучшего качества
-
-Ollama использует промпт с контекстом (реализован в `llm_provider.dart`):
-
-```dart
-// Из llm_provider.dart — промпт отправляемый в Ollama
-final prompt = '''
-Translate the following UI string from $from to $to.
-${context != null ? 'Context: $context' : ''}
-Return ONLY the translated text, no explanations.
-
-Text to translate: $text
-''';
-```
-
-Для лучших результатов — добавляйте `@i18n-context` аннотации в код.
-
 ### Проверка доступности
 
 ```bash
+# Проверить что Ollama запущен и модель есть
 curl http://localhost:11434/api/tags
-# Должен вернуть список установленных моделей
 
 # Тестовый перевод
 curl http://localhost:11434/api/generate -d '{
   "model": "llama3",
-  "prompt": "Translate to Russian: Create item",
+  "prompt": "Translate to Russian, return ONLY the translation: Create item",
   "stream": false
 }'
 ```
+
+### Как работает промпт
+
+В `llm_provider.dart` используется структурированный промпт с низкой температурой (0.1):
+
+```
+You are a professional UI translator.
+Translate the following UI string from English to Russian.
+
+Context: Button label in the main list view
+
+Rules:
+- Return ONLY the translated text, nothing else
+- Do NOT add quotes, explanations, or notes
+- Preserve any {placeholders} exactly as-is
+- Keep the same tone as the original
+
+Text to translate:
+Create item
+```
+
+Ответ автоматически очищается от кавычек, markdown-блоков и лишних пояснений.
 
 ---
 
 ## Stub — Заглушка
 
-**Качество:** — (не переводит)  
-**Языков:** все  
-**Офлайн:** всегда доступна  
-**Назначение:** позволяет запустить pipeline даже без провайдеров, помечая строки для ручного перевода
-
-Stub автоматически активируется, если ни один другой провайдер не доступен.
-Создаёт записи вида:
+Активируется автоматически если ни один другой провайдер не доступен.
+Создаёт записи с маркером для ручного перевода:
 
 ```json
 {
   "createItem": "⚠️ NEEDS_REVIEW: Create item",
   "@createItem": {
+    "description": "Auto-translated by Stub. NEEDS REVIEW.",
     "x-needs-review": true,
-    "x-translated-by": "Stub"
+    "x-source": "Create item"
   }
 }
 ```
@@ -395,16 +327,22 @@ Stub автоматически активируется, если ни один
 Найти все строки требующие ревью:
 
 ```bash
-grep -r "NEEDS_REVIEW" lib/*/l10n/
+grep -r "NEEDS_REVIEW" lib/*/l10n/ packages/*/lib/l10n/
+```
+
+arb_pilot в аудите отдельно считает и показывает такие строки:
+
+```
+Требуют ревью (NEEDS_REVIEW)              5   ←
 ```
 
 ---
 
 ## Добавление своего провайдера
 
-### Шаг 1 — Реализуйте интерфейс
+### Шаг 1 — Создайте файл провайдера
 
-Создайте файл `lib/tools/i18n/translator/my_provider.dart`:
+`lib/tools/i18n/translator/my_provider.dart`:
 
 ```dart
 import 'dart:convert';
@@ -421,8 +359,7 @@ class MyTranslationProvider implements TranslationProvider {
 
   @override
   bool supportsLanguage(String langCode) {
-    // Укажите поддерживаемые языки
-    const supported = {'en', 'ru', 'zh', 'de', 'fr'};
+    const supported = {'en', 'ru', 'zh', 'de', 'fr', 'es'};
     return supported.contains(langCode.toLowerCase());
   }
 
@@ -430,9 +367,11 @@ class MyTranslationProvider implements TranslationProvider {
   Future<bool> isAvailable() async {
     if (apiKey.isEmpty) return false;
     try {
-      // Проверьте доступность вашего API
-      final client = HttpClient();
-      final req = await client.getUrl(Uri.parse('https://api.example.com/ping'));
+      final client = HttpClient()
+        ..connectionTimeout = const Duration(seconds: 5);
+      final req = await client.getUrl(
+        Uri.parse('https://api.example.com/ping'),
+      );
       req.headers.set('Authorization', 'Bearer $apiKey');
       final res = await req.close();
       await res.drain<void>();
@@ -451,62 +390,65 @@ class MyTranslationProvider implements TranslationProvider {
     String? context,
   }) async {
     final body = jsonEncode({
-      'text': text,
-      'from': from,
-      'to': to,
+      'text':    text,
+      'source':  from,
+      'target':  to,
       if (context != null) 'context': context,
     });
 
     final client = HttpClient();
-    final req = await client.postUrl(
-      Uri.parse('https://api.example.com/translate'),
-    );
-    req.headers.set('Authorization', 'Bearer $apiKey');
-    req.headers.contentType = ContentType.json;
-    req.write(body);
+    try {
+      final req = await client.postUrl(
+        Uri.parse('https://api.example.com/translate'),
+      );
+      req.headers.set('Authorization', 'Bearer $apiKey');
+      req.headers.contentType = ContentType.json;
+      req.write(body);
 
-    final res = await req.close();
-    final raw = await res.transform(utf8.decoder).join();
-    client.close();
+      final res = await req.close();
+      final raw = await res.transform(utf8.decoder).join();
 
-    if (res.statusCode != 200) {
-      throw Exception('MyProvider ${res.statusCode}: $raw');
+      if (res.statusCode != 200) {
+        throw Exception('MyProvider ${res.statusCode}: $raw');
+      }
+
+      final data = jsonDecode(raw) as Map<String, dynamic>;
+
+      return TranslationResult(
+        text:        data['translation'] as String,
+        provider:    name,
+        needsReview: context == null,
+      );
+    } finally {
+      client.close();
     }
-
-    final data = jsonDecode(raw) as Map<String, dynamic>;
-
-    return TranslationResult(
-      text: data['translation'] as String,
-      provider: name,
-      needsReview: context == null,
-    );
   }
 }
 ```
 
-### Шаг 2 — Зарегистрируйте в цепочке
+### Шаг 2 — Зарегистрируйте в chain.dart
 
 Откройте `lib/tools/i18n/translator/chain.dart` и добавьте:
 
 ```dart
 import 'my_provider.dart';
 
-// В методе TranslationChain.fromConfig():
-final myKey = Platform.environment['MY_PROVIDER_KEY'] 
-    ?? config['my-provider-key'] ?? '';
-if (myKey.isNotEmpty) {
+// В методе TranslationChain.fromConfig() — перед StubProvider:
+final myKey = config.myProviderKey; // добавьте поле в ArbPilotConfig
+if (myKey != null) {
   providers.add(MyTranslationProvider(apiKey: myKey));
 }
 ```
 
-### Шаг 3 — Добавьте поддержку флага (опционально)
-
-В `bin/language_revisor.dart`:
+### Шаг 3 — Добавьте поле в config.dart
 
 ```dart
-// В парсере аргументов:
-final myKey = args['my-provider-key'] as String? ?? 
-    Platform.environment['MY_PROVIDER_KEY'] ?? '';
+// В классе ArbPilotConfig:
+final String? myProviderKey;
+
+// В factory ArbPilotConfig.fromArgs():
+final myKey = _argValue(args, '--my-provider-key') ??
+    Platform.environment['MY_PROVIDER_KEY'];
 ```
 
 ### Шаг 4 — Использование
@@ -520,17 +462,17 @@ dart run bin/language_revisor.dart --auto
 
 ## Сравнительная таблица
 
-| Провайдер | Языков | Хинди | Офлайн | Бесплатно | Качество | Рекомендуется для |
-|---|---|---|---|---|---|---|
-| **DeepL** | 29 | ❌ | ❌ | 500K символов/мес | ★★★★★ | EN/RU/DE/FR/ZH/ES — высшее качество |
-| **Google Translate** | 130+ | ✅ | ❌ | $300 кредит | ★★★★ | Хинди, редкие языки, полное покрытие |
-| **Yandex Translate** | 100+ | ❌ | ❌ | Бесплатный грант | ★★★★ | RU и постсоветские языки |
-| **Ollama** | Все | ✅ | ✅ | Бесплатно | ★★★ | Офлайн, приватные проекты |
-| **Stub** | Все | ✅ | ✅ | Бесплатно | — | Разработка, отладка пайплайна |
+| Провайдер | Языков | Хинди | Офлайн | Бесплатно | Качество |
+|---|---|---|---|---|---|
+| **DeepL** | 29 | ❌ | ❌ | 500K символов/мес | ★★★★★ |
+| **Google Translate** | 130+ | ✅ | ❌ | $300 кредит | ★★★★ |
+| **Yandex Translate** | 100+ | ❌ | ❌ | Грант | ★★★★ |
+| **Ollama** | Все | ✅ | ✅ | Бесплатно | ★★★ |
+| **Stub** | Все | ✅ | ✅ | Бесплатно | — |
 
 ### Рекомендуемые комбинации
 
-**Максимальное качество (платно):**
+**Максимальное качество:**
 ```bash
 dart run bin/language_revisor.dart --auto \
   --deepl-key=KEY:fx \
@@ -542,16 +484,16 @@ dart run bin/language_revisor.dart --auto \
 dart run bin/language_revisor.dart --auto \
   --deepl-key=KEY:fx \
   --google-key=KEY \
+  --yandex-key=KEY \
   --ollama-model=llama3
 ```
 
-**Полностью офлайн (без интернета):**
+**Полностью офлайн:**
 ```bash
 dart run bin/language_revisor.dart --auto --ollama-model=llama3
 ```
 
-**Разработка и отладка (без ключей):**
+**Разработка без ключей (Stub создаст NEEDS_REVIEW):**
 ```bash
 dart run bin/language_revisor.dart --auto
-# Stub создаст NEEDS_REVIEW записи — их можно потом найти и перевести вручную
 ```

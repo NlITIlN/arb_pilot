@@ -1,6 +1,6 @@
 # arb_pilot — Справочник команд
 
-> Полный список команд, флагов и примеров использования.
+> Полный список команд, флагов и примеров. Основан на реальном коде `bin/language_revisor.dart`.
 
 ---
 
@@ -9,11 +9,12 @@
 - [Базовый синтаксис](#базовый-синтаксис)
 - [Режимы работы](#режимы-работы)
 - [Флаги провайдеров](#флаги-провайдеров)
-- [Фильтры](#фильтры)
-- [Параметры вывода](#параметры-вывода)
+- [Фильтры и пути](#фильтры-и-пути)
+- [Вывод и отладка](#вывод-и-отладка)
 - [Переменные окружения](#переменные-окружения)
 - [Коды выхода](#коды-выхода)
 - [Примеры — рабочие сценарии](#примеры--рабочие-сценарии)
+- [Таблица всех флагов](#таблица-всех-флагов)
 
 ---
 
@@ -23,81 +24,88 @@
 dart run bin/language_revisor.dart [флаги]
 ```
 
-Если arb_pilot находится рядом с проектом (вариант standalone):
+Если arb_pilot лежит рядом с проектом (standalone):
 
 ```bash
-dart run bin/language_revisor.dart --root=/path/to/your_project [флаги]
+dart run bin/language_revisor.dart --root=../my_flutter_app [флаги]
+```
+
+Быстрая справка прямо в терминале:
+
+```bash
+dart run bin/language_revisor.dart --help
 ```
 
 ---
 
 ## Режимы работы
 
-### Аудит (по умолчанию)
+### Без флагов — Аудит (read-only)
 
-Только читает — ничего не изменяет. Безопасно запускать в любое время.
+Безопасно запускать в любое время. Ничего не изменяет, только анализирует.
 
 ```bash
 dart run bin/language_revisor.dart
 ```
 
-Показывает:
+Что показывает:
 - сколько Dart-файлов просканировано
-- сколько `.arb` файлов найдено
-- сколько ключей используется в коде
+- сколько `.arb` файлов найдено и по каким модулям
+- сколько уникальных ключей используется в коде
+- сколько ключей имеют `@i18n-context` аннотации
 - отсутствующие переводы (missing)
-- устаревшие ключи (orphaned)
-- пустые значения (empty)
-- строки, требующие ревью (NEEDS_REVIEW)
+- устаревшие ключи (orphaned — есть в `.arb`, нет в коде)
+- пустые значения и `NEEDS_REVIEW` маркеры
+- проблемы качества (placeholder mismatch, слишком длинные строки)
 
 ---
 
 ### `--auto` — Автоперевод
 
-Переводит все найденные пробелы без подтверждений.
+Переводит все найденные пробелы без подтверждений. Пишет результаты в `.arb` файлы.
 
 ```bash
-dart run bin/language_revisor.dart --auto --deepl-key=YOUR_KEY
+dart run bin/language_revisor.dart --auto
 ```
 
-Порядок попытки провайдеров:
+Порядок попытки провайдеров (fallback-цепочка):
 
 ```
-DeepL → Google Translate → Ollama → Stub (⚠️ NEEDS_REVIEW)
+DeepL → Google Translate → Yandex → Ollama → Stub (⚠️ NEEDS_REVIEW)
 ```
 
-Если провайдер недоступен или не поддерживает язык — автоматически используется следующий.
+Если провайдер недоступен или не поддерживает язык — следующий подхватывает автоматически.
 
 ---
 
 ### `--interactive` — Интерактивный режим
 
-Показывает каждый перевод и спрашивает подтверждение перед записью.
+Показывает каждый перевод и ждёт подтверждения перед записью.
 
 ```bash
 dart run bin/language_revisor.dart --interactive
 ```
 
-```
-  [ru] createNode → "Создать узел" (DeepL Free)
-  Записать? [y/N]: y
+Пример диалога:
 
-  [zh] createNode → "创建节点" (DeepL Free)
-  Записать? [y/N]: n   ← пропустить
+```
+  Перевести [ru] createNode = "Create node"? [Y/n]: y
+  Перевести [zh] createNode = "Create node"? [Y/n]: n  ← пропустить
+  Перевести [hi] deleteItem = "Delete"? [Y/n]: y
 ```
 
 ---
 
-### `--dry-run` — Предварительный просмотр
+### `--dry-run` — Предпросмотр без изменений
 
-Показывает план — что будет переведено и каким провайдером — без записи в файлы.
+Показывает что будет переведено и каким провайдером — без записи в файлы.
 
 ```bash
 dart run bin/language_revisor.dart --auto --dry-run
 dart run bin/language_revisor.dart --auto --deepl-key=KEY --dry-run
 ```
 
-Полезно перед первым запуском, чтобы убедиться, что всё настроено правильно.
+Все строки выводятся с пометкой `[dry-run]`. Полезно перед первым запуском.
 
 ---
 
@@ -106,15 +114,15 @@ dart run bin/language_revisor.dart --auto --deepl-key=KEY --dry-run
 Удаляет из `.arb` файлов ключи, которых больше нет в Dart-коде.
 
 ```bash
-# Удаление с подтверждением каждого ключа
+# С подтверждением по каждому файлу
 dart run bin/language_revisor.dart --interactive --remove-orphaned
 
-# Удаление без подтверждений (осторожно!)
+# Без подтверждений (осторожно!)
 dart run bin/language_revisor.dart --auto --remove-orphaned
-```
 
-> ⚠️ Перед использованием без `--interactive` убедитесь, что аудит показывает
-> именно те ключи, которые вы хотите удалить.
+# Посмотреть что будет удалено — без удаления
+dart run bin/language_revisor.dart --auto --remove-orphaned --dry-run
+```
 
 ---
 
@@ -122,59 +130,74 @@ dart run bin/language_revisor.dart --auto --remove-orphaned
 
 ### `--deepl-key=KEY`
 
-DeepL API ключ. Поддерживает Free и Pro тарифы.
+DeepL API ключ. Лучшее качество для EN/RU/DE/FR/ZH/ES и других европейских языков.
 
 ```bash
-dart run bin/language_revisor.dart --auto --deepl-key=abc123:fx    # Free
-dart run bin/language_revisor.dart --auto --deepl-key=abc123       # Pro
+dart run bin/language_revisor.dart --auto --deepl-key=abc123:fx    # Free тариф
+dart run bin/language_revisor.dart --auto --deepl-key=abc123       # Pro тариф
 ```
 
-Free ключи заканчиваются на `:fx` — arb_pilot определяет это автоматически
-и использует правильный endpoint (`api-free.deepl.com` vs `api.deepl.com`).
+Free ключи заканчиваются на `:fx` — arb_pilot определяет это автоматически и использует правильный endpoint.
 
-Альтернатива — переменная окружения `DEEPL_API_KEY`.
+**Не поддерживает:** хинди (hi) — автоматически передаётся следующему провайдеру.
 
-Поддерживаемые языки: EN, RU, ZH, ES, DE, FR, IT, JA, KO, PT, NL, PL и другие (29 языков).
-**Хинди (HI) не поддерживается** — автоматически передаётся в Google или Ollama.
+Альтернатива: переменная окружения `DEEPL_API_KEY`.
 
 ---
 
 ### `--google-key=KEY`
 
-Google Cloud Translation API ключ. Покрывает 130+ языков включая хинди, арабский, суахили и др.
+Google Cloud Translation API ключ. 130+ языков включая хинди, арабский, суахили.
 
 ```bash
 dart run bin/language_revisor.dart --auto --google-key=AIzaSy...
 ```
 
-Получить ключ: [Google Cloud Console](https://console.cloud.google.com/) → APIs & Services → Cloud Translation API.
+Получить ключ: [Google Cloud Console](https://console.cloud.google.com/) → APIs → Cloud Translation API → Credentials.
 
-Альтернатива — переменная окружения `GOOGLE_TRANSLATE_KEY`.
+Альтернатива: переменная окружения `GOOGLE_TRANSLATE_KEY`.
+
+---
+
+### `--yandex-key=KEY`
+
+Yandex Cloud Translate ключ. Отличное качество для русского и постсоветских языков.
+
+```bash
+dart run bin/language_revisor.dart --auto --yandex-key=AQVNy...
+```
+
+Получить ключ: [Yandex Cloud Console](https://console.yandex.cloud/) → Translate API.
+
+Альтернатива: переменная окружения `YANDEX_TRANSLATE_KEY`.
 
 ---
 
 ### `--ollama-model=NAME`
 
-Локальная LLM через Ollama. Работает полностью офлайн, API ключи не нужны.
+Локальный LLM через Ollama. Полностью офлайн, API ключи не нужны.
 
 ```bash
-# llama3 (рекомендуется для качества)
 dart run bin/language_revisor.dart --auto --ollama-model=llama3
-
-# mistral (быстрее, меньше памяти)
 dart run bin/language_revisor.dart --auto --ollama-model=mistral
-
-# gemma2 (от Google, хорошее качество)
 dart run bin/language_revisor.dart --auto --ollama-model=gemma2
+dart run bin/language_revisor.dart --auto --ollama-model=phi3
 ```
 
-По умолчанию модель: `llama3`.
+По умолчанию: `llama3`.
+
+Перед запуском Ollama должен быть запущен и модель скачана:
+
+```bash
+ollama serve
+ollama pull llama3
+```
 
 ---
 
 ### `--ollama-host=URL`
 
-Хост Ollama, если он запущен не на localhost.
+Хост Ollama если он запущен не на localhost.
 
 ```bash
 dart run bin/language_revisor.dart --auto \
@@ -183,6 +206,8 @@ dart run bin/language_revisor.dart --auto \
 ```
 
 По умолчанию: `http://localhost:11434`.
+
+Альтернатива: переменная окружения `OLLAMA_HOST`.
 
 ---
 
@@ -196,22 +221,24 @@ dart run bin/language_revisor.dart --auto \
   --google-key=YOUR_GOOGLE_KEY
 ```
 
-Fallback-цепочка в этом случае:
-- DeepL — если язык поддерживается и ключ валиден
-- Google — для языков не поддерживаемых DeepL (хинди и др.) или при ошибке DeepL
-- Ollama — если Google недоступен (нет ключа)
-- Stub — последний резерв, пишет `⚠️ NEEDS_REVIEW: текст`
+Максимальное покрытие + офлайн фоллбэк:
+
+```bash
+dart run bin/language_revisor.dart --auto \
+  --deepl-key=KEY:fx \
+  --google-key=KEY \
+  --ollama-model=llama3
+```
 
 ---
 
-## Фильтры
+## Фильтры и пути
 
 ### `--source-lang=CODE`
 
 Переопределить исходный язык (по умолчанию `en` или из `arb_pilot.yaml`).
 
 ```bash
-# Если исходный язык — русский
 dart run bin/language_revisor.dart --auto --source-lang=ru
 ```
 
@@ -219,7 +246,7 @@ dart run bin/language_revisor.dart --auto --source-lang=ru
 
 ### `--langs=CODE,CODE,...`
 
-Переводить только для указанных языков.
+Переводить только для указанных языков через запятую.
 
 ```bash
 # Только русский и китайский
@@ -227,77 +254,108 @@ dart run bin/language_revisor.dart --auto --langs=ru,zh --deepl-key=KEY
 
 # Только хинди через Google
 dart run bin/language_revisor.dart --auto --langs=hi --google-key=KEY
+
+# Один язык для теста
+dart run bin/language_revisor.dart --auto --langs=de --deepl-key=KEY --dry-run
 ```
 
 ---
 
 ### `--root=PATH`
 
-Корень проекта. По умолчанию — текущая директория.
+Путь к корню проекта. По умолчанию — текущая директория.
 
 ```bash
-# Если arb_pilot рядом с проектом
+# Относительный путь
 dart run bin/language_revisor.dart --root=../my_flutter_app
 
 # Абсолютный путь
 dart run bin/language_revisor.dart --root=/Users/dev/projects/my_app
+
+# Конкретный пакет в монорепозитории
+dart run bin/language_revisor.dart --root=./packages/ui_kit
 ```
+
+Альтернатива: переменная окружения `ARB_PILOT_ROOT`.
 
 ---
 
-## Параметры вывода
+## Вывод и отладка
 
 ### `--format=json`
 
-Вывод в JSON — для CI/CD пайплайнов, скриптов, интеграций.
+JSON-отчёт для CI/CD пайплайнов и скриптов.
 
 ```bash
+dart run bin/language_revisor.dart --format=json
 dart run bin/language_revisor.dart --format=json > report.json
 dart run bin/language_revisor.dart --format=json | jq '.by_type'
 ```
 
-Пример выходного JSON:
+Формат JSON-отчёта:
 
 ```json
 {
-  "generated_at": "2026-05-01T12:00:00.000Z",
+  "generated_at": "2026-05-14T12:00:00.000Z",
   "total_issues": 15,
   "by_type": {
     "missing": 12,
     "orphaned": 3,
     "empty": 0,
-    "needs_review": 0
+    "needs_review": 0,
+    "quality": 2
   },
+  "orphaned_keys": [
+    { "key": "oldButton", "module": "core", "locale": "ru" }
+  ],
   "by_language": {
     "ru": {
       "missing_count": 4,
       "missing_keys": ["createNode", "deleteItem", "archiveAll", "exportPdf"],
-      "coverage": 0.95
+      "coverage": 0.9524
     },
     "zh": {
       "missing_count": 8,
-      "missing_keys": ["createNode", "deleteItem", "..."],
-      "coverage": 0.90
+      "missing_keys": ["createNode", "..."],
+      "coverage": 0.9048
     }
   }
 }
 ```
 
+При `--format=json` весь остальной вывод подавляется — только JSON в stdout.
+
 ---
 
 ### `--no-color`
 
-Отключить ANSI-цвета в выводе. Полезно для Windows CMD и логов CI.
+Отключить ANSI-цвета. Полезно для Windows CMD и CI-логов.
 
 ```bash
 dart run bin/language_revisor.dart --no-color
+dart run bin/language_revisor.dart --format=json --no-color > report.json
 ```
+
+arb_pilot автоматически отключает цвета если задана переменная `NO_COLOR`,
+`TERM=dumb`, или вывод идёт не в терминал (pipe).
 
 ---
 
-### `--help`
+### `--debug`
 
-Показать справку по всем флагам.
+Подробный вывод: стек ошибок, какой провайдер упал и почему.
+
+```bash
+dart run bin/language_revisor.dart --auto --deepl-key=KEY --debug
+```
+
+Альтернатива: переменная окружения `DEBUG=1`.
+
+---
+
+### `--help` / `-h`
+
+Справка по всем флагам прямо в терминале.
 
 ```bash
 dart run bin/language_revisor.dart --help
@@ -307,20 +365,34 @@ dart run bin/language_revisor.dart --help
 
 ## Переменные окружения
 
-Альтернативный способ передачи настроек — удобен для CI/CD (не светить ключи в логах команд).
+Удобны для CI/CD — ключи не светятся в логах команд.
 
 | Переменная | Аналог флага | Описание |
 |---|---|---|
 | `DEEPL_API_KEY` | `--deepl-key` | DeepL API ключ |
 | `GOOGLE_TRANSLATE_KEY` | `--google-key` | Google Translate ключ |
-| `ARB_PILOT_ROOT` | `--root` | Путь к корню проекта |
-| `DEBUG=1` | — | Показывать полный стек ошибок |
+| `YANDEX_TRANSLATE_KEY` | `--yandex-key` | Yandex Translate ключ |
+| `OLLAMA_MODEL` | `--ollama-model` | Ollama модель |
+| `OLLAMA_HOST` | `--ollama-host` | Ollama хост |
+| `ARB_PILOT_ROOT` | `--root` | Корень проекта |
+| `NO_COLOR` | `--no-color` | Отключить ANSI цвета |
+| `DEBUG=1` | `--debug` | Подробный вывод ошибок |
 
 ```bash
-# Пример использования env переменных
 export DEEPL_API_KEY="abc123:fx"
 export GOOGLE_TRANSLATE_KEY="AIzaSy..."
+export YANDEX_TRANSLATE_KEY="AQVNy..."
 dart run bin/language_revisor.dart --auto
+```
+
+В GitHub Actions через Secrets:
+
+```yaml
+- name: Auto-translate
+  env:
+    DEEPL_API_KEY: ${{ secrets.DEEPL_API_KEY }}
+    GOOGLE_TRANSLATE_KEY: ${{ secrets.GOOGLE_TRANSLATE_KEY }}
+  run: dart run bin/language_revisor.dart --auto --no-color
 ```
 
 ---
@@ -329,29 +401,22 @@ dart run bin/language_revisor.dart --auto
 
 | Код | Значение | Когда |
 |---|---|---|
-| `0` | Успех | Всё в порядке, или перевод завершён без ошибок |
+| `0` | Успех | Всё синхронизировано, или перевод завершён без ошибок |
 | `1` | Ошибка | Сетевая ошибка, неверный API ключ, битый `.arb` файл |
-| `2` | Найдены проблемы | Аудит завершён, есть missing/orphaned ключи |
+| `2` | Найдены проблемы | Аудит завершён, есть missing или orphaned ключи |
 
 Код `2` — не ошибка, это штатная ситуация для git hooks и CI.
 
 ```bash
 dart run bin/language_revisor.dart
-echo $?   # 0 если всё чисто, 2 если есть проблемы
-```
-
-```yaml
-# В GitHub Actions можно разрешить код 2 (аудит с проблемами)
-- name: Audit
-  run: dart run bin/language_revisor.dart
-  continue-on-error: false   # Изменить на true если не хотите блокировать PR
+echo "Exit code: $?"   # 0 если чисто, 2 если есть проблемы
 ```
 
 ---
 
 ## Примеры — рабочие сценарии
 
-### Первая проверка проекта (ничего не меняет)
+### Первая проверка нового проекта
 
 ```bash
 dart run bin/language_revisor.dart
@@ -359,7 +424,7 @@ dart run bin/language_revisor.dart
 
 ---
 
-### Перевести через DeepL, посмотреть план
+### Посмотреть план перевода без изменений
 
 ```bash
 dart run bin/language_revisor.dart --auto --deepl-key=KEY --dry-run
@@ -367,7 +432,15 @@ dart run bin/language_revisor.dart --auto --deepl-key=KEY --dry-run
 
 ---
 
-### Полноценный автоперевод с двумя провайдерами
+### Перевести всё через DeepL
+
+```bash
+dart run bin/language_revisor.dart --auto --deepl-key=abc123:fx
+```
+
+---
+
+### DeepL + Google (рекомендуемая комбинация)
 
 ```bash
 dart run bin/language_revisor.dart --auto \
@@ -377,31 +450,35 @@ dart run bin/language_revisor.dart --auto \
 
 ---
 
-### Только русский и китайский, интерактивно
+### Только хинди через Google
 
 ```bash
-dart run bin/language_revisor.dart \
-  --interactive \
-  --langs=ru,zh \
-  --deepl-key=KEY
+dart run bin/language_revisor.dart --auto \
+  --langs=hi \
+  --google-key=AIzaSy...
 ```
 
 ---
 
-### Перевести офлайн через Ollama
+### Полностью офлайн через Ollama
 
 ```bash
-# Сначала запустить Ollama и скачать модель
 ollama serve &
 ollama pull mistral
-
-# Перевести
 dart run bin/language_revisor.dart --auto --ollama-model=mistral
 ```
 
 ---
 
-### Очистить устаревшие ключи интерактивно
+### Интерактивно — только русский и китайский
+
+```bash
+dart run bin/language_revisor.dart --interactive --langs=ru,zh --deepl-key=KEY
+```
+
+---
+
+### Очистить устаревшие ключи с подтверждением
 
 ```bash
 dart run bin/language_revisor.dart --interactive --remove-orphaned
@@ -413,16 +490,7 @@ dart run bin/language_revisor.dart --interactive --remove-orphaned
 
 ```bash
 dart run bin/language_revisor.dart --format=json --no-color > i18n_report.json
-```
-
----
-
-### Через переменные окружения (безопасно в CI)
-
-```bash
-DEEPL_API_KEY=abc123:fx \
-GOOGLE_TRANSLATE_KEY=AIzaSy... \
-dart run bin/language_revisor.dart --auto
+cat i18n_report.json | jq '.by_type'
 ```
 
 ---
@@ -435,48 +503,105 @@ dart run bin/language_revisor.dart --root=./packages/ui_kit
 
 ---
 
-### Полный pipeline: аудит → перевод → проверка → удаление orphaned
+### Полный скрипт: аудит → перевод → очистка
 
 ```bash
 #!/bin/bash
 set -e
 
 echo "=== 1. Аудит ==="
-dart run bin/language_revisor.dart
+dart run bin/language_revisor.dart || true
 
 echo "=== 2. Перевод ==="
 dart run bin/language_revisor.dart --auto \
-  --deepl-key=$DEEPL_API_KEY \
-  --google-key=$GOOGLE_KEY
+  --deepl-key="$DEEPL_API_KEY" \
+  --google-key="$GOOGLE_TRANSLATE_KEY"
 
-echo "=== 3. Проверка результата ==="
-dart run bin/language_revisor.dart --format=json > report.json
-MISSING=$(python3 -c "import json,sys; print(json.load(sys.stdin)['by_type']['missing'])" < report.json)
-echo "Missing: $MISSING"
-
-echo "=== 4. Удаление orphaned ==="
+echo "=== 3. Удаление устаревших ключей ==="
 dart run bin/language_revisor.dart --auto --remove-orphaned
 
+echo "=== 4. Итоговый отчёт ==="
+dart run bin/language_revisor.dart --format=json --no-color > i18n_report.json
+python3 -c "
+import json
+r = json.load(open('i18n_report.json'))
+print(f'Missing:  {r[\"by_type\"][\"missing\"]}')
+print(f'Orphaned: {r[\"by_type\"][\"orphaned\"]}')
+"
 echo "=== Готово ==="
+```
+
+---
+
+### GitHub Actions — полный пример
+
+```yaml
+name: i18n Audit & Translate
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  i18n:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dart-lang/setup-dart@v1
+        with:
+          sdk: stable
+
+      - name: Audit translations
+        run: |
+          dart run bin/language_revisor.dart \
+            --format=json --no-color > i18n_report.json
+        continue-on-error: true
+
+      - name: Auto-translate missing
+        if: github.ref == 'refs/heads/main'
+        env:
+          DEEPL_API_KEY: ${{ secrets.DEEPL_API_KEY }}
+          GOOGLE_TRANSLATE_KEY: ${{ secrets.GOOGLE_TRANSLATE_KEY }}
+        run: |
+          dart run bin/language_revisor.dart --auto --no-color
+
+      - name: Commit updated translations
+        if: github.ref == 'refs/heads/main'
+        run: |
+          git config user.name "arb_pilot"
+          git config user.email "bot@arb-pilot.dev"
+          git add "lib/**/l10n/*.arb" "packages/**/l10n/*.arb" || true
+          git diff --staged --quiet || \
+            git commit -m "chore: auto-translate missing strings [skip ci]"
+          git push || true
+
+      - name: Upload i18n report
+        uses: actions/upload-artifact@v4
+        with:
+          name: i18n-report
+          path: i18n_report.json
 ```
 
 ---
 
 ## Таблица всех флагов
 
-| Флаг | Значение по умолчанию | Описание |
-|---|---|---|
-| `--auto` | — | Автоперевод без подтверждений |
-| `--interactive` | — | Подтверждение каждого действия |
-| `--dry-run` | — | Показать план без изменений |
-| `--deepl-key=KEY` | `$DEEPL_API_KEY` | DeepL API ключ |
-| `--google-key=KEY` | `$GOOGLE_TRANSLATE_KEY` | Google Translate ключ |
-| `--ollama-host=URL` | `http://localhost:11434` | Хост Ollama |
-| `--ollama-model=NAME` | `llama3` | Модель Ollama |
-| `--source-lang=CODE` | `en` (из конфига) | Исходный язык |
-| `--langs=a,b,c` | из конфига | Целевые языки (через запятую) |
-| `--root=PATH` | текущая директория | Корень проекта |
-| `--remove-orphaned` | — | Удалить устаревшие ключи |
-| `--format=json` | — | JSON вывод для CI/CD |
-| `--no-color` | — | Без ANSI цветов |
-| `--help` | — | Справка |
+| Флаг | Тип | Default | Описание |
+|---|---|---|---|
+| `--auto` | bool | false | Автоперевод без подтверждений |
+| `--interactive` | bool | false | Подтверждение каждого шага |
+| `--dry-run` | bool | false | Показать план без изменений |
+| `--remove-orphaned` | bool | false | Удалить устаревшие ключи |
+| `--deepl-key=KEY` | string | `$DEEPL_API_KEY` | DeepL API ключ |
+| `--google-key=KEY` | string | `$GOOGLE_TRANSLATE_KEY` | Google Translate ключ |
+| `--yandex-key=KEY` | string | `$YANDEX_TRANSLATE_KEY` | Yandex Translate ключ |
+| `--ollama-model=NAME` | string | `llama3` | Ollama модель |
+| `--ollama-host=URL` | string | `http://localhost:11434` | Ollama хост |
+| `--source-lang=CODE` | string | `en` (из конфига) | Исходный язык |
+| `--langs=a,b,c` | string | из конфига | Целевые языки через запятую |
+| `--root=PATH` | string | текущая директория | Корень проекта |
+| `--format=json` | string | — | JSON вывод для CI/CD |
+| `--no-color` | bool | false | Без ANSI цветов |
+| `--debug` | bool | false | Подробный вывод ошибок |
+| `--help` / `-h` | bool | false | Показать справку |
